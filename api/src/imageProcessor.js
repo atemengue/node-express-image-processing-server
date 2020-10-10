@@ -6,23 +6,25 @@ const { Worker, isMainThread } = require('worker_threads');
 const pathToResizeWorker = path.resolve(__dirname, 'resizeWorker.js');
 const pathToMonochromeWorker = path.resolve(__dirname, 'monochromeWorker.js');
 
-function uploadPathResolver(filename) {
+const uploadPathResolver = (filename) => {
   return path.resolve(__dirname, '../uploads', filename);
-}
+};
 
-function imageProcessor(filename) {
-  let monochromeWorkerFinished = false;
-  let resizeWorkerFinished = false;
-
+const imageProcessor = (filename) => {
   const sourcePath = uploadPathResolver(filename);
-  const resizedDestination = uploadPathResolver(`resized-${filename}`);
-  const monochromeDestination = uploadPathResolver(`monochrome-${filename}`);
+  const resizedDestination = uploadPathResolver('resized-' + filename);
+  const monochromeDestination = uploadPathResolver('monochrome-' + filename);
+  let resizeWorkerFinished = false;
+  let monochromeWorkerFinished = false;
 
-  return new Promise((resolse, reject) => {
+  return new Promise((resolve, reject) => {
     if (isMainThread) {
       try {
         const resizeWorker = new Worker(pathToResizeWorker, {
-          workerData: { source: sourcePath, destination: resizedDestination },
+          workerData: {
+            source: sourcePath,
+            destination: resizedDestination,
+          },
         });
 
         const monochromeWorker = new Worker(pathToMonochromeWorker, {
@@ -35,7 +37,7 @@ function imageProcessor(filename) {
         resizeWorker.on('message', (message) => {
           resizeWorkerFinished = true;
           if (monochromeWorkerFinished) {
-            resolse('resizeWorker finished processing');
+            resolve('resizeWorker finished processing');
           }
         });
 
@@ -45,13 +47,15 @@ function imageProcessor(filename) {
 
         resizeWorker.on('exit', (code) => {
           if (code !== 0) {
-            reject(new Error(`Exited with status code ${code}`));
+            reject(new Error('Exited with status code ' + code));
           }
         });
 
-        monochromeWorker.on('message', () => {
+        monochromeWorker.on('message', (message) => {
           monochromeWorkerFinished = true;
-          resolse('monochromeWorker finished processing');
+          if (resizeWorkerFinished) {
+            resolve('monochromeWorker finished processing');
+          }
         });
 
         monochromeWorker.on('error', (error) => {
@@ -60,16 +64,16 @@ function imageProcessor(filename) {
 
         monochromeWorker.on('exit', (code) => {
           if (code !== 0) {
-            reject(new Error(`Exited with status code ${code}`));
+            reject(new Error('Exited with status code ' + code));
           }
         });
       } catch (error) {
-        reject();
+        reject(error);
       }
     } else {
       reject(new Error('not on main thread'));
     }
   });
-}
+};
 
 module.exports = imageProcessor;
